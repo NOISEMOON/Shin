@@ -65,7 +65,8 @@ func main() {
 	otMap = make(map[string]string)
 	newOTMap = make(map[string]string)
 	if defaultOT == "" {
-		defaultOT = strconv.FormatInt(time.Now().Unix(), 10)
+		// 默认从6小时前拉取
+		defaultOT = strconv.FormatInt(time.Now().Add(-6*time.Hour).Unix(), 10)
 	}
 	logger.Println("otMapJSON:", otMapJSON)
 	json.Unmarshal([]byte(otMapJSON), &otMap)
@@ -268,7 +269,7 @@ func rssFetchFeed(feedID, feedTitle, authToken string) string {
 				if err != nil {
 					fmt.Println("crawlTimeStr conversion err:", err)
 				} else {
-					newOT := strconv.FormatInt(crawlTimeInt+1, 10)
+					newOT := strconv.FormatInt((crawlTimeInt/1000)+1, 10)
 					logger.Printf("crawlTimeInt: %d newOT: %s", crawlTimeInt, newOT)
 					newOTMap[feedID] = newOT
 				}
