@@ -1,337 +1,193 @@
 package main
 
 import (
-	"crypto/tls"
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
-	"math/rand"
+	"database/sql"
 	"net/http"
-	"net/smtp"
-	"net/url"
 	"os"
-	"regexp"
 	"strconv"
-	"strings"
 	"time"
-	_ "time/tzdata"
+
+	"github.com/gin-gonic/gin"
+	_ "modernc.org/sqlite" // SQLite driver
 )
 
-type EmailSender struct {
-	smtpServer string
-	smtpPort   int
-	login      string
-	password   string
+// Post represents the shin_post table structure
+type Post struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"created_at"`
+	ReadAt    string `json:"read_at"`
 }
 
-var (
-	logger                      = log.New(os.Stdout, "", log.LstdFlags)
-	pollIntervalSeconds         = getenvInt("POLL_INTERVAL_SECONDS", 600)
-	googleBaseURL               = "https://translate.googleapis.com/translate_a/single"
-	freshrssAuthURL             = os.Getenv("FRESHRSS_AUTH_URL")
-	freshrssListSubscriptionURL = os.Getenv("FRESHRSS_LIST_SUBSCRIPTION_URL")
-	freshrssContentURLPrefix    = os.Getenv("FRESHRSS_CONTENT_URL_PREFIX")
-	freshrssFilteredLabel       = os.Getenv("FRESHRSS_FILTERED_LABEL")
-	senderEmail                 = os.Getenv("SENDER_EMAIL")
-	senderAuthToken             = os.Getenv("SENDER_AUTH_TOKEN")
-	smtpServer                  = os.Getenv("SMTP_SERVER")
-	smtpPort                    = getenvInt("SMTP_PORT", 25)
-	receiverEmail               = os.Getenv("RECEIVER_EMAIL")
-	defaultOT                   = os.Getenv("DEFAULT_OT")
-	otMapJSON                   = os.Getenv("OT_MAP_JSON")
-	otMap                       map[string]string
-	newOTMap                    map[string]string
-)
+// DB initialization
+var db *sql.DB
 
-func init() {
-	// 设置全局的 http.DefaultTransport，跳过 TLS 验证
-	http.DefaultTransport = &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+func initDB() {
+
+	// 获取数据库文件路径，默认使用当前目录下的 shin.db
+	dbPath := os.Getenv("DB_PATH")
+	logger.Print("dbPath:", dbPath)
+	var err error
+	db, err = sql.Open("sqlite", dbPath)
+	if err != nil {
+		panic("failed to connect database")
+	}
+
+	// Create the table if it doesn't exist
+	createTableSQL := `CREATE TABLE IF NOT EXISTS shin_post (
+		id TEXT PRIMARY KEY,
+		title TEXT,
+		content TEXT,
+		created_at TEXT,
+		read_at TEXT
+	);`
+	if _, err := db.Exec(createTableSQL); err != nil {
+		panic("failed to create table")
 	}
 }
 
-func getenvInt(key string, fallback int) int {
-	if value, ok := os.LookupEnv(key); ok {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
+// createPost handler
+func createPost(c *gin.Context) {
+	var input struct {
+		Title   string `json:"title"`
+		Content string `json:"content"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	post := CreatePostDB(input.Title, input.Content)
+
+	c.JSON(http.StatusOK, post)
+}
+
+func CreatePostDB(title, content string) Post {
+	post := Post{
+		ID:        strconv.FormatInt(time.Now().UnixNano(), 10),
+		Title:     title,
+		Content:   content,
+		CreatedAt: strconv.FormatInt(time.Now().Unix(), 10),
+		ReadAt:    "0", // initially unread
+	}
+
+	_, err := db.Exec("INSERT INTO shin_post (id, title, content, created_at, read_at) VALUES (?, ?, ?, ?, ?)",
+		post.ID, post.Title, post.Content, post.CreatedAt, post.ReadAt)
+	if err != nil {
+		panic(err) // Handle error appropriately in production
+	}
+
+	return post
+}
+
+func markRead(c *gin.Context) {
+	var input struct {
+		PostID string `json:"post_id"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 更新 read_at 字段
+	readAt := strconv.FormatInt(time.Now().Unix(), 10)
+	_, err := db.Exec("UPDATE shin_post SET read_at = ? WHERE id = ?", readAt, input.PostID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error updating post"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Post marked as read"})
+}
+
+func getDetail(c *gin.Context) {
+	postID := c.Query("id")
+	logger.Println("getDetail: ", postID)
+	var post Post
+	err := db.QueryRow("SELECT id, title, content, created_at, read_at FROM shin_post WHERE id = ?", postID).Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.ReadAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Post not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching post"})
 		}
+		return
 	}
-	return fallback
+
+	c.JSON(http.StatusOK, post)
+}
+
+// pagePost handler
+func pagePost(c *gin.Context) {
+	pageNumber, _ := strconv.Atoi(c.Query("page_number"))
+	pageSize, _ := strconv.Atoi(c.Query("page_size"))
+
+	var posts []Post
+	var totalPosts int64
+
+	err := db.QueryRow("SELECT COUNT(*) FROM shin_post").Scan(&totalPosts)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error counting posts"})
+		return
+	}
+	totalPage := (totalPosts + int64(pageSize) - 1) / int64(pageSize)
+
+	rows, err := db.Query("SELECT id, title, content, created_at, read_at FROM shin_post ORDER BY created_at DESC LIMIT ? OFFSET ?", pageSize, (pageNumber-1)*pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching posts"})
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var post Post
+		if err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.ReadAt); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error scanning post"})
+			return
+		}
+		posts = append(posts, post)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total_page": totalPage,
+		"data":       posts,
+	})
 }
 
 func main() {
-	logger.Println("Starting loop...")
-	otMap = make(map[string]string)
-	newOTMap = make(map[string]string)
-	if defaultOT == "" {
-		// 默认从6小时前拉取
-		defaultOT = strconv.FormatInt(time.Now().Add(-6*time.Hour).Unix(), 10)
-	}
-	logger.Println("otMapJSON:", otMapJSON)
-	json.Unmarshal([]byte(otMapJSON), &otMap)
-	logger.Printf("Start otMap: %v newOTMap: %v defaultOT: %s", otMap, newOTMap, defaultOT)
 
-	authToken := rssAuth()
+	go AsyncTask()
 
-	emailSender := &EmailSender{
-		smtpServer: smtpServer,
-		smtpPort:   smtpPort,
-		login:      senderEmail,
-		password:   senderAuthToken,
-	}
+	r := gin.Default()
 
-	for {
-		body := buildMailBody(authToken)
-		if body != "" {
-			location, _ := time.LoadLocation("Asia/Shanghai")
-			subject := fmt.Sprintf("RSS %s", time.Now().In(location).Format("2006-01-02 15:04:05"))
+	// Initialize the database
+	initDB()
 
-			if emailSender.SendEmail(senderEmail, receiverEmail, subject, body) {
-				logger.Println("Email sent successfully.")
-				newOTMapJson, _ := json.MarshalIndent(newOTMap, "", " ")
-				logger.Printf("Update otMap: %v newOTMap: %s", otMap, string(newOTMapJson))
-				otMap = newOTMap
-			}
+	// Serve static files (CSS, JS, images, etc.)
+	r.Static("/static", "./static")
 
-		} else {
-			logger.Println("No updates. Don't send email.")
-		}
-		time.Sleep(time.Duration(pollIntervalSeconds) * time.Second)
-	}
-}
+	r.GET("/", func(c *gin.Context) {
+		c.File("./templates/post_list.html")
+	})
 
-func (e *EmailSender) SendEmail(from, to, subject, body string) bool {
-	msg := fmt.Sprintf("From: %s\nTo: %s\nSubject: %s\n\n%s", from, to, subject, body)
+	// Route for the post list page
+	r.GET("/post_list", func(c *gin.Context) {
+		c.File("./templates/post_list.html")
+	})
 
-	// 连接到 SMTP 服务器
-	client, err := smtp.Dial(fmt.Sprintf("%s:%d", e.smtpServer, e.smtpPort))
-	if err != nil {
-		logger.Println("Failed to connect to SMTP server:", err)
-		return false
-	}
-	defer client.Close()
+	// Route for the post detail page
+	r.GET("/post_detail", func(c *gin.Context) {
+		c.File("./templates/post_detail.html")
+	})
 
-	// 跳过 TLS 证书验证
-	tlsConfig := &tls.Config{
-		ServerName:         e.smtpServer,
-		InsecureSkipVerify: true, // 跳过 TLS 证书验证
-	}
+	// REST API routes
+	r.POST("/create_post", createPost)
+	r.POST("/mark_read", markRead)
+	r.GET("/page_post", pagePost)
+	r.GET("/get_detail", getDetail)
 
-	// 启动 TLS
-	if err := client.StartTLS(tlsConfig); err != nil {
-		logger.Println("Failed to start TLS:", err)
-		return false
-	}
-
-	// 进行身份验证
-	auth := smtp.PlainAuth("", e.login, e.password, e.smtpServer)
-	if err := client.Auth(auth); err != nil {
-		logger.Println("Failed to authenticate:", err)
-		return false
-	}
-
-	// 设置发送者和接收者
-	if err := client.Mail(from); err != nil {
-		logger.Println("Failed to set mail sender:", err)
-		return false
-	}
-	if err := client.Rcpt(to); err != nil {
-		logger.Println("Failed to set mail recipient:", err)
-		return false
-	}
-
-	// 写入邮件内容
-	writer, err := client.Data()
-	if err != nil {
-		logger.Println("Failed to get writer for mail content:", err)
-		return false
-	}
-	_, err = writer.Write([]byte(msg))
-	if err != nil {
-		logger.Println("Failed to write email content:", err)
-		return false
-	}
-	writer.Close()
-
-	return true
-}
-
-func rssAuth() string {
-	response, err := http.Get(freshrssAuthURL)
-	if err != nil {
-		logger.Println("Error during RSS auth:", err)
-		return ""
-	}
-	defer response.Body.Close()
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		logger.Println("Error reading response body:", err)
-		return ""
-	}
-
-	re := regexp.MustCompile(`SID=([^\n]+)`)
-	match := re.FindStringSubmatch(string(body))
-	if len(match) > 1 {
-		return match[1]
-	}
-	logger.Println("SID not found")
-	return ""
-}
-
-func buildMailBody(authToken string) string {
-	subs := rssListSub(authToken)
-	body := ""
-	for _, sub := range subs {
-		feedID := sub["id"].(string)
-		feedTitle := sub["title"].(string)
-		feedContent := rssFetchFeed(feedID, feedTitle, authToken)
-		if feedContent != "" {
-			body += feedContent + "\n"
-		} else {
-			logger.Println("No updates from", feedID, feedTitle)
-		}
-	}
-	return body
-}
-
-func rssListSub(authToken string) []map[string]interface{} {
-	var enSub []map[string]interface{}
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", freshrssListSubscriptionURL, nil)
-	if err != nil {
-		logger.Println("Failed to create request:", err)
-		return enSub
-	}
-	req.Header.Add("Authorization", fmt.Sprintf("GoogleLogin auth=%s", authToken))
-
-	resp, err := client.Do(req)
-	if err != nil {
-		logger.Println("Error during list subscription:", err)
-		return enSub
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == 200 {
-		body, _ := io.ReadAll(resp.Body)
-		var data map[string]interface{}
-		if err := json.Unmarshal(body, &data); err == nil {
-			subscriptions := data["subscriptions"].([]interface{})
-			for _, sub := range subscriptions {
-				item := sub.(map[string]interface{})
-				for _, category := range item["categories"].([]interface{}) {
-					if freshrssFilteredLabel != "" && category.(map[string]interface{})["label"].(string) != freshrssFilteredLabel {
-						continue
-					}
-					enSub = append(enSub, item)
-				}
-			}
-		} else {
-			logger.Println("Failed to parse JSON:", err)
-		}
-	}
-	return enSub
-}
-
-func rssFetchFeed(feedID, feedTitle, authToken string) string {
-	ot := otMap[feedID]
-	logger.Printf("feedID: %s feedTitle: %s ot: %s defaultOT: %s", feedID, feedTitle, ot, defaultOT)
-	if ot == "" {
-		ot = defaultOT
-	}
-
-	url := fmt.Sprintf("%s%s?ot=%s", freshrssContentURLPrefix, feedID, ot)
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		logger.Println("Failed to create request:", err)
-		return ""
-	}
-	req.Header.Add("Authorization", fmt.Sprintf("GoogleLogin auth=%s", authToken))
-
-	resp, err := client.Do(req)
-	if err != nil {
-		logger.Println("Failed to fetch feed:", err)
-		return ""
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == 200 {
-		body, _ := io.ReadAll(resp.Body)
-		var data map[string]interface{}
-		if err := json.Unmarshal(body, &data); err == nil {
-			items := data["items"].([]interface{})
-			if len(items) > 0 {
-				// 获取 crawlTimeMsec，假设它是一个字符串
-				crawlTimeStr := items[0].(map[string]interface{})["crawlTimeMsec"].(string)
-				crawlTimeInt, err := strconv.ParseInt(crawlTimeStr, 10, 64)
-				if err != nil {
-					fmt.Println("crawlTimeStr conversion err:", err)
-				} else {
-					newOT := strconv.FormatInt((crawlTimeInt/1000)+1, 10)
-					logger.Printf("crawlTimeInt: %d newOT: %s", crawlTimeInt, newOT)
-					newOTMap[feedID] = newOT
-				}
-
-				var content strings.Builder
-				content.WriteString(fmt.Sprintf("<h1>%s</h1>\n", feedTitle))
-				for _, item := range items {
-					title := item.(map[string]interface{})["title"].(string)
-					cnTitle := translate(title)
-					href := item.(map[string]interface{})["canonical"].([]interface{})[0].(map[string]interface{})["href"].(string)
-					content.WriteString(fmt.Sprintf("<li>%s <a href=%s>%s</a></li>", cnTitle, href, title))
-					time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
-				}
-				return content.String()
-			}
-		}
-	}
-	return ""
-}
-
-func translate(text string) string {
-	logger.Println("text:", text)
-	encodedText := url.QueryEscape(text)
-	requestURL := googleBaseURL + "?client=gtx&sl=auto&tl=zh&dt=t&q=" + encodedText
-
-	response, err := http.Get(requestURL)
-	if err != nil {
-		logger.Println("Translation error:", err)
-		return ""
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(response.Body)
-		logger.Println("Non-200 response:", response.StatusCode, string(bodyBytes))
-		return ""
-	}
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		logger.Println("Error reading translation response:", err)
-		return ""
-	}
-
-	var result []interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		logger.Println("Failed to parse translation response:", err)
-		return ""
-	}
-
-	// [[["翻译结果",...]]]
-	if len(result) > 0 {
-		firstItem, ok := result[0].([]interface{})
-		if ok && len(firstItem) > 0 {
-			secondItem, ok := firstItem[0].([]interface{})
-			if ok && len(secondItem) > 0 {
-				if translatedText, ok := secondItem[0].(string); ok {
-					return translatedText
-				}
-			}
-		}
-	}
-
-	return ""
+	r.Run(":8080")
 }

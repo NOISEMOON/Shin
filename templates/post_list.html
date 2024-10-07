@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inbox</title>
+    <link rel="stylesheet" type="text/css" href="/static/css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <h1>Inbox</h1>
+    <div id="post-list"></div>
+    
+    <div id="pagination">
+        <span id="page-info"></span> <!-- 显示当前页面和总页码 -->
+        <div>
+            <a href="#" id="prev-link" style="display:none;">← Previous</a>
+            <a href="#" id="next-link" style="display:none;">Next →</a>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1; // 当前页面
+        let totalPages = 1; // 总页码
+
+        async function loadPosts(pageNumber) {
+            const response = await fetch(`/page_post?page_number=${pageNumber}&page_size=10`);
+            const data = await response.json();
+            const postList = document.getElementById('post-list');
+
+            // 清空列表
+            postList.innerHTML = '';
+            totalPages = data.total_page; // 获取总页码
+
+            data.data.forEach(post => {
+                const postDiv = document.createElement('div');
+                postDiv.className = 'post-item';
+                const linkClass = post.read_at !== "0" ? "read-link" : "unread-link"; // 选择类名
+
+                postDiv.innerHTML = `
+                    ${post.read_at !== "0" ? " ◉" : " ○"}
+                    <a href="/post_detail?id=${post.id}" class="${linkClass}">${post.title}</a>
+                `;
+                postList.appendChild(postDiv);
+            });
+
+            // 更新当前页面信息
+            document.getElementById('page-info').innerText = `Page ${pageNumber} of ${totalPages}`;
+
+            // 显示/隐藏翻页链接
+            document.getElementById('prev-link').style.display = pageNumber > 1 ? 'inline' : 'none';
+            document.getElementById('next-link').style.display = pageNumber < totalPages ? 'inline' : 'none';
+        }
+
+        // 点击向前翻页
+        document.getElementById('prev-link').addEventListener('click', (event) => {
+            event.preventDefault(); // 防止默认行为
+            if (currentPage > 1) {
+                currentPage--;
+                loadPosts(currentPage);
+            }
+        });
+
+        // 点击向后翻页
+        document.getElementById('next-link').addEventListener('click', (event) => {
+            event.preventDefault(); // 防止默认行为
+            if (currentPage < totalPages) {
+                currentPage++;
+                loadPosts(currentPage);
+            }
+        });
+
+        loadPosts(currentPage); // 初始加载第一页
+    </script>
+</body>
+</html>

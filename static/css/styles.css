@@ -1,0 +1,43 @@
+/* 设置 font-family 为 "Fira Code", monospace */
+html {
+    font-family: "Fira Code", monospace;
+    text-align: left;
+}
+
+.post-item {
+    margin-top: 5px;
+}
+
+li {
+    margin-bottom: 15px;
+}
+
+/* 未读 post 链接样式 */
+.unread-link {
+    font-weight: bold;
+    color: #cd8c3d; /* 未读链接颜色为黄色 */
+}
+
+/* 已读 post 链接样式 */
+.read-link {
+    color: #808080; /* 已读链接颜色为灰色 */
+}
+
+a.disabled {
+    color: #d8d8d8; /* 禁用链接的颜色为灰色 */
+    pointer-events: none; /* 禁用点击事件 */
+    text-decoration: none; /* 去掉下划线 */
+}
+
+a {
+    color: #2caa8a; /* 默认链接颜色 */
+}
+
+#post-list {
+    margin-bottom: 20px;
+}
+
+#pagination {
+    margin-top: 20px;
+}
+

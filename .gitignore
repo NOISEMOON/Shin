@@ -1,6 +1,6 @@
-local/
 *.tar
 .DS_Store
+*.db
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

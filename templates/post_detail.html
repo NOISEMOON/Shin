@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detail</title>
+    <link rel="stylesheet" type="text/css" href="/static/css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap" rel="stylesheet">
+    <style>
+        /* 样式定义 */
+        #loading {
+            display: block;
+            text-align: center;
+            font-size: 1.5em;
+        }
+        #post-content {
+            display: none; /* 初始隐藏 */
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">🔄 Loading...</div>
+
+    <div id="post-content">
+        <h1 id="post-title"></h1>
+        <div id="post-body"></div>
+        <a href="/">↩️ Back</a>
+    </div>
+
+    <script>
+        const postId = getPostIdFromUrl();
+        console.log("postId = " + postId);
+        
+        document.addEventListener("DOMContentLoaded", function () {
+            fetch(`/get_detail?id=${postId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById("loading").innerText = "❌ " + data.error;
+                        return;
+                    }
+                    // 显示 post 数据
+                    document.getElementById("post-title").innerText = data.title;
+                    document.getElementById("post-body").innerHTML = data.content;
+
+                    // 隐藏加载指示器，显示内容
+                    document.getElementById("loading").style.display = "none";
+                    document.getElementById("post-content").style.display = "block";
+
+                    // 标记 post 为已读
+                    markPostAsRead(postId);
+                })
+                .catch(error => {
+                    console.error('Error loading post:', error);
+                    document.getElementById("loading").innerText = "❌ Error loading post!";
+                });
+        });
+
+        function markPostAsRead(postId) {
+            // 调用 markRead API 标记为已读
+            fetch('/mark_read', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ post_id: postId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Marked post as read:', data);
+            })
+            .catch(error => {
+                console.error('Error marking post as read:', error);
+            });
+        }
+
+        function getPostIdFromUrl() {
+            const url = window.location.href;
+            console.log(url);
+            const urlParams = new URLSearchParams(new URL(url).search);
+            const id = urlParams.get('id');
+            console.log(id);
+            return id;
+        }
+    </script>
+</body>
+</html>
