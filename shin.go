@@ -23,6 +23,7 @@ type Post struct {
 
 // DB initialization
 var db *sql.DB
+var authToken string
 
 func initDB() {
 
@@ -31,6 +32,7 @@ func initDB() {
 		logger.Fatalf("Error loading .env file: %v", env_err)
 	}
 
+	authToken = os.Getenv("AUTH_TOKEN")
 	// 获取数据库文件路径，默认使用当前目录下的 shin.db
 	dbPath := os.Getenv("DB_PATH")
 	logger.Print("dbPath:", dbPath)
@@ -51,6 +53,35 @@ func initDB() {
 	if _, err := db.Exec(createTableSQL); err != nil {
 		panic("failed to create table")
 	}
+}
+
+// 鉴权中间件
+func authMiddleware(c *gin.Context) {
+	if c.Request.URL.Path == "/login_page" || c.Request.URL.Path == "/login" {
+		c.Next() // 继续处理，不拦截
+		return
+	}
+
+	// 获取 cookie 中的 token
+	token, err := c.Cookie("token")
+	if err != nil {
+		// 如果 token 不存在或无效，重定向到登录页面
+		c.Redirect(http.StatusFound, "/login_page")
+		c.Abort() // 终止请求
+		return
+	}
+
+	// 验证 token
+	if token != authToken {
+		logger.Println("no token in cookie")
+		// 如果 token 不匹配，返回登录页面
+		c.Redirect(http.StatusFound, "/login_page")
+		c.Abort()
+		return
+	}
+
+	// 继续处理请求
+	c.Next()
 }
 
 // createPost handler
@@ -163,6 +194,34 @@ func pagePost(c *gin.Context) {
 	})
 }
 
+// 处理登录请求
+func processLogin(c *gin.Context) {
+	var input struct {
+		Token string `form:"token"`
+	}
+
+	if err := c.ShouldBind(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Printf("clientToken: %s envToken: %s", input.Token, authToken)
+
+	// 验证 token
+	if input.Token == authToken {
+		// 设置客户端的 token
+		c.SetCookie("token", input.Token, 3600, "/", "", false, true)
+
+		// 登录成功，重定向到首页
+		c.Redirect(http.StatusFound, "/post_list")
+	} else {
+		// token 不匹配，返回登录页面
+		c.HTML(http.StatusOK, "login.html", gin.H{
+			"error": "Invalid token",
+		})
+	}
+}
+
 func main() {
 
 	go AsyncTask()
@@ -172,24 +231,32 @@ func main() {
 	// Initialize the database
 	initDB()
 
+	// 应用认证中间件到所有路由
+	r.Use(authMiddleware)
+
 	// Serve static files (CSS, JS, images, etc.)
 	r.Static("/static", "./static")
 
+	r.LoadHTMLGlob("templates/*")
+
+	r.GET("/login_page", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "login.html", gin.H{})
+	})
+
 	r.GET("/", func(c *gin.Context) {
-		c.File("./templates/post_list.html")
+		c.HTML(http.StatusOK, "post_list.html", gin.H{})
 	})
 
-	// Route for the post list page
 	r.GET("/post_list", func(c *gin.Context) {
-		c.File("./templates/post_list.html")
+		c.HTML(http.StatusOK, "post_list.html", gin.H{})
 	})
 
-	// Route for the post detail page
 	r.GET("/post_detail", func(c *gin.Context) {
-		c.File("./templates/post_detail.html")
+		c.HTML(http.StatusOK, "post_detail.html", gin.H{})
 	})
 
 	// REST API routes
+	r.POST("/login", processLogin)
 	r.POST("/create_post", createPost)
 	r.POST("/mark_read", markRead)
 	r.GET("/page_post", pagePost)

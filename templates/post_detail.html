@@ -1,23 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Detail</title>
     <link rel="stylesheet" type="text/css" href="/static/css/styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap" rel="stylesheet">
-    <style>
-        /* 样式定义 */
-        #loading {
-            display: block;
-            text-align: center;
-            font-size: 1.5em;
-        }
-        #post-content {
-            display: none; /* 初始隐藏 */
-        }
-    </style>
 </head>
+
 <body>
     <div id="loading">🔄 Loading...</div>
 
@@ -29,10 +20,11 @@
 
     <script>
         const postId = getPostIdFromUrl();
-        console.log("postId = " + postId);
-        
+
         document.addEventListener("DOMContentLoaded", function () {
-            fetch(`/get_detail?id=${postId}`)
+            fetch(`/get_detail?id=${postId}`, {
+                method: 'GET'
+            })
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
@@ -60,28 +52,24 @@
             // 调用 markRead API 标记为已读
             fetch('/mark_read', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
                 body: JSON.stringify({ post_id: postId })
             })
-            .then(response => response.json())
-            .then(data => {
-                console.log('Marked post as read:', data);
-            })
-            .catch(error => {
-                console.error('Error marking post as read:', error);
-            });
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Marked post as read:', data);
+                })
+                .catch(error => {
+                    console.error('Error marking post as read:', error);
+                });
         }
 
         function getPostIdFromUrl() {
             const url = window.location.href;
-            console.log(url);
             const urlParams = new URLSearchParams(new URL(url).search);
             const id = urlParams.get('id');
-            console.log(id);
             return id;
         }
     </script>
 </body>
+
 </html>

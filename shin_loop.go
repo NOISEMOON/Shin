@@ -28,7 +28,7 @@ type EmailSender struct {
 }
 
 var (
-	_                           = godotenv.Load(".env")
+	_                           = godotenv.Load("/data/.env")
 	logger                      = log.New(os.Stdout, "", log.LstdFlags)
 	hn_regex                    = regexp.MustCompile(`https://news\.ycombinator\.com/item\?id=\d+`)
 	pollIntervalSeconds         = getenvInt("POLL_INTERVAL_SECONDS", 600)
