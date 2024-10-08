@@ -26,7 +26,7 @@ var db *sql.DB
 
 func initDB() {
 
-	env_err := godotenv.Load(".env")
+	env_err := godotenv.Load("/data/.env")
 	if env_err != nil {
 		logger.Fatalf("Error loading .env file: %v", env_err)
 	}
@@ -195,5 +195,5 @@ func main() {
 	r.GET("/page_post", pagePost)
 	r.GET("/get_detail", getDetail)
 
-	r.Run(":8080")
+	r.Run(":8777")
 }

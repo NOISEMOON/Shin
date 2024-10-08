@@ -13,7 +13,6 @@ RUN go mod download
 # 复制源代码
 COPY . .
 
-
 # 构建应用
 RUN CGO_ENABLED=0 GOOS=linux go build -o shin .
 # RUN CGO_ENABLED=1 GOOS=linux go build -o shin .
@@ -37,14 +36,13 @@ FROM alpine:latest
 
 # 复制构建好的可执行文件
 COPY --from=builder /app/shin .
-COPY --from=builder /app/.env .
 COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/static ./static
 
 # 创建数据库存储的目录
 RUN mkdir -p /data
 
-EXPOSE 8080
+EXPOSE 8777
 
 # 启动应用程序
 CMD ["./shin"]
