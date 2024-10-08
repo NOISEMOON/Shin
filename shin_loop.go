@@ -32,7 +32,7 @@ var (
 	_                           = godotenv.Load("/data/.env")
 	logger                      = log.New(os.Stdout, "", log.LstdFlags)
 	hn_regex                    = regexp.MustCompile(`https://news\.ycombinator\.com/item\?id=\d+`)
-	pollIntervalSeconds         = getenvInt("POLL_INTERVAL_SECONDS", 600)
+	pollIntervalSeconds, _      = strconv.Atoi(os.Getenv("POLL_INTERVAL_SECONDS"))
 	googleBaseURL               = "https://translate.googleapis.com/translate_a/single"
 	freshrssAuthURL             = os.Getenv("FRESHRSS_AUTH_URL")
 	freshrssListSubscriptionURL = os.Getenv("FRESHRSS_LIST_SUBSCRIPTION_URL")
@@ -41,7 +41,7 @@ var (
 	senderEmail                 = os.Getenv("SENDER_EMAIL")
 	senderAuthToken             = os.Getenv("SENDER_AUTH_TOKEN")
 	smtpServer                  = os.Getenv("SMTP_SERVER")
-	smtpPort                    = getenvInt("SMTP_PORT", 25)
+	smtpPort, _                 = strconv.Atoi(os.Getenv("SMTP_PORT"))
 	receiverEmail               = os.Getenv("RECEIVER_EMAIL")
 	defaultOT                   = os.Getenv("DEFAULT_OT")
 	otMapJSON                   = os.Getenv("OT_MAP_JSON")
@@ -55,15 +55,6 @@ func init() {
 	http.DefaultTransport = &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
-}
-
-func getenvInt(key string, fallback int) int {
-	if value, ok := os.LookupEnv(key); ok {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
-	}
-	return fallback
 }
 
 func AsyncTask() {
