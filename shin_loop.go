@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 	_ "time/tzdata"
+
+	"github.com/joho/godotenv"
 )
 
 type EmailSender struct {
@@ -26,7 +28,9 @@ type EmailSender struct {
 }
 
 var (
+	_                           = godotenv.Load(".env")
 	logger                      = log.New(os.Stdout, "", log.LstdFlags)
+	hn_regex                    = regexp.MustCompile(`https://news\.ycombinator\.com/item\?id=\d+`)
 	pollIntervalSeconds         = getenvInt("POLL_INTERVAL_SECONDS", 600)
 	googleBaseURL               = "https://translate.googleapis.com/translate_a/single"
 	freshrssAuthURL             = os.Getenv("FRESHRSS_AUTH_URL")
@@ -40,6 +44,7 @@ var (
 	receiverEmail               = os.Getenv("RECEIVER_EMAIL")
 	defaultOT                   = os.Getenv("DEFAULT_OT")
 	otMapJSON                   = os.Getenv("OT_MAP_JSON")
+	withContentFeeds            = os.Getenv("WITH_CONTENT_FEEDS")
 	otMap                       map[string]string
 	newOTMap                    map[string]string
 )
@@ -280,6 +285,14 @@ func rssFetchFeed(feedID, feedTitle, authToken string) string {
 					title := item.(map[string]interface{})["title"].(string)
 					cnTitle := translate(title)
 					href := item.(map[string]interface{})["canonical"].([]interface{})[0].(map[string]interface{})["href"].(string)
+					// for hacker news, use comment link
+					if strings.Contains(withContentFeeds, feedID) {
+						summary_content := item.(map[string]interface{})["summary"].(map[string]interface{})["content"].(string)
+						match := hn_regex.FindString(summary_content)
+						if len(match) > 0 {
+							href = match
+						}
+					}
 					content.WriteString(fmt.Sprintf("<li>%s <a href=%s target=\"_blank\">%s</a></li>", cnTitle, href, title))
 					time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 				}

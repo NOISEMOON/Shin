@@ -16,6 +16,7 @@ docker run \
   -e SMTP_SERVER="" \
   -e SMTP_PORT=25 \
   -e RECEIVER_EMAIL="" \
+  -e WITH_CONTENT_FEEDS="feed/63" \
   -e DEFAULT_OT="1728017013" \
   -e OT_MAP_JSON="{"feed/79": "1728017013"}" \
   shin

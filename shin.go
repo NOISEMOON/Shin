@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	_ "modernc.org/sqlite" // SQLite driver
 )
 
@@ -24,6 +25,11 @@ type Post struct {
 var db *sql.DB
 
 func initDB() {
+
+	env_err := godotenv.Load(".env")
+	if env_err != nil {
+		logger.Fatalf("Error loading .env file: %v", env_err)
+	}
 
 	// 获取数据库文件路径，默认使用当前目录下的 shin.db
 	dbPath := os.Getenv("DB_PATH")
