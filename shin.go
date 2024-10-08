@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 	_ "modernc.org/sqlite" // SQLite driver
 )
 
@@ -21,23 +20,13 @@ type Post struct {
 	ReadAt    string `json:"read_at"`
 }
 
-// DB initialization
 var db *sql.DB
 var authToken string
 
 func initDB() {
-
-	env_err := godotenv.Load("/data/.env")
-	if env_err != nil {
-		logger.Fatalf("Error loading .env file: %v", env_err)
-	}
-
 	authToken = os.Getenv("AUTH_TOKEN")
-	// 获取数据库文件路径，默认使用当前目录下的 shin.db
-	dbPath := os.Getenv("DB_PATH")
-	logger.Print("dbPath:", dbPath)
 	var err error
-	db, err = sql.Open("sqlite", dbPath)
+	db, err = sql.Open("sqlite", DB_PATH)
 	if err != nil {
 		panic("failed to connect database")
 	}
@@ -74,7 +63,6 @@ func authMiddleware(c *gin.Context) {
 	// 验证 token
 	if token != authToken {
 		logger.Println("no token in cookie")
-		// 如果 token 不匹配，返回登录页面
 		c.Redirect(http.StatusFound, "/login_page")
 		c.Abort()
 		return
@@ -261,6 +249,7 @@ func main() {
 	r.POST("/mark_read", markRead)
 	r.GET("/page_post", pagePost)
 	r.GET("/get_detail", getDetail)
+	r.POST("/createMemo", CreateMemo)
 
 	r.Run(":8777")
 }

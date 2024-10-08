@@ -10,11 +10,10 @@
 </head>
 
 <body>
-    <div id="loading">🔄 Loading...</div>
-
-    <div id="post-content">
-        <h1 id="post-title"></h1>
-        <div id="post-body"></div>
+    <h1 id="post-title"></h1>
+    <div id="loading">Loading...</div>
+    <div id="post-content" style="display: none;">
+        <div id="news-container"></div>
     </div>
     <div id="back"><a href="/">↩️ Back</a></div>
 
@@ -31,13 +30,74 @@
                         document.getElementById("loading").innerText = "❌ " + data.error;
                         return;
                     }
-                    // 显示 post 数据
-                    document.getElementById("post-title").innerText = data.title;
-                    document.getElementById("post-body").innerHTML = data.content;
 
-                    // 隐藏加载指示器，显示内容
                     document.getElementById("loading").style.display = "none";
                     document.getElementById("post-content").style.display = "block";
+
+                    // 显示 post 数据
+                    document.getElementById("post-title").innerText = data.title;
+
+                    const parsedContent = JSON.parse(data.content);
+                    console.log("parsedContent: " + parsedContent);
+
+                    // 获取新闻容器
+                    const newsContainer = document.getElementById('news-container');
+
+                    // 遍历解析后的对象
+                    for (const newsCategory in parsedContent) {
+                        console.log("newsCategory: " + newsCategory);
+                        // 创建 h2 元素
+                        const h2 = document.createElement('h2');
+                        h2.innerText = newsCategory;
+                        newsContainer.appendChild(h2);
+
+                        // 创建 ul 元素
+                        const ul = document.createElement('ul');
+
+                        // 遍历每个新闻项
+                        parsedContent[newsCategory].forEach(newsItem => {
+                            const li = document.createElement('li');
+                            li.innerText = newsItem.cnTitle + " ";
+
+                            // 创建链接
+                            const link = document.createElement('a');
+                            link.href = newsItem.link;
+                            link.innerText = `${newsItem.title}`;
+                            link.target = "_blank"; // 在新标签页打开链接
+
+                            li.appendChild(link);
+                            li.append(" ");
+
+                            const button = document.createElement('button');
+                            button.innerText = "💾";
+                            button.onclick = async function () {
+                                const memoContent = `${newsItem.cnTitle}\n${newsItem.title}\n${newsItem.link}\n#rss`;
+
+                                // 发送 POST 请求到 createMemo
+                                const response = await fetch('/createMemo', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({ memoContent: memoContent })
+                                });
+
+                                // 根据返回结果提示成功或失败
+                                const result = await response.json();
+                                if (response.ok) {
+                                    alert('Memo created successfully!');
+                                } else {
+                                    alert('Failed to create memo: ' + result.error);
+                                }
+                            };
+
+                            li.appendChild(button);
+
+                            ul.appendChild(li);
+                        });
+
+                        newsContainer.appendChild(ul);
+                    }
 
                     // 标记 post 为已读
                     markPostAsRead(postId);
@@ -55,9 +115,6 @@
                 body: JSON.stringify({ post_id: postId })
             })
                 .then(response => response.json())
-                .then(data => {
-                    console.log('Marked post as read:', data);
-                })
                 .catch(error => {
                     console.error('Error marking post as read:', error);
                 });

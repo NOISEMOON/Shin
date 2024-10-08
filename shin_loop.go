@@ -28,6 +28,7 @@ type EmailSender struct {
 }
 
 var (
+	DB_PATH                     = "/data/shin.db"
 	_                           = godotenv.Load("/data/.env")
 	logger                      = log.New(os.Stdout, "", log.LstdFlags)
 	hn_regex                    = regexp.MustCompile(`https://news\.ycombinator\.com/item\?id=\d+`)
@@ -87,12 +88,17 @@ func AsyncTask() {
 	}
 
 	for {
-		body := buildMailBody(authToken)
-		if body != "" {
+		data, err := fetchNews(authToken)
+		logger.Printf("fetchNews data: %s", data)
+		if err != nil {
+			logger.Println("Fetch news error: ", err)
+			continue
+		}
+		if data != "" && data != "{}" {
 			location, _ := time.LoadLocation("Asia/Shanghai")
 			subject := fmt.Sprintf("RSS %s", time.Now().In(location).Format("2006-01-02 15:04:05"))
-			CreatePostDB(subject, body)
-			if emailSender.SendEmail(senderEmail, receiverEmail, subject, body) {
+			CreatePostDB(subject, data)
+			if emailSender.SendEmail(senderEmail, receiverEmail, subject, data) {
 				logger.Println("Email sent successfully.")
 				newOTMapJson, _ := json.MarshalIndent(newOTMap, "", " ")
 				logger.Printf("Update otMap: %v newOTMap: %s", otMap, string(newOTMapJson))
@@ -185,23 +191,31 @@ func rssAuth() string {
 	return ""
 }
 
-func buildMailBody(authToken string) string {
-	subs := rssListSub(authToken)
-	body := ""
+func fetchNews(authToken string) (string, error) {
+	subs := fetchSub(authToken)
+	data := make(map[string][]map[string]string)
+
 	for _, sub := range subs {
 		feedID := sub["id"].(string)
 		feedTitle := sub["title"].(string)
-		feedContent := rssFetchFeed(feedID, feedTitle, authToken)
-		if feedContent != "" {
-			body += feedContent + "\n"
+		feedContent := fetchFeed(feedID, feedTitle, authToken)
+
+		if len(feedContent) > 0 {
+			data[feedTitle] = feedContent
 		} else {
 			logger.Println("No updates from", feedID, feedTitle)
 		}
 	}
-	return body
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+
+	return string(jsonData), nil
 }
 
-func rssListSub(authToken string) []map[string]interface{} {
+func fetchSub(authToken string) []map[string]interface{} {
 	var enSub []map[string]interface{}
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", freshrssListSubscriptionURL, nil)
@@ -239,7 +253,7 @@ func rssListSub(authToken string) []map[string]interface{} {
 	return enSub
 }
 
-func rssFetchFeed(feedID, feedTitle, authToken string) string {
+func fetchFeed(feedID, feedTitle, authToken string) []map[string]string {
 	ot := otMap[feedID]
 	logger.Printf("feedID: %s feedTitle: %s ot: %s defaultOT: %s", feedID, feedTitle, ot, defaultOT)
 	if ot == "" {
@@ -251,14 +265,14 @@ func rssFetchFeed(feedID, feedTitle, authToken string) string {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		logger.Println("Failed to create request:", err)
-		return ""
+		return nil
 	}
 	req.Header.Add("Authorization", fmt.Sprintf("GoogleLogin auth=%s", authToken))
 
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.Println("Failed to fetch feed:", err)
-		return ""
+		return nil
 	}
 	defer resp.Body.Close()
 
@@ -267,6 +281,8 @@ func rssFetchFeed(feedID, feedTitle, authToken string) string {
 		var data map[string]interface{}
 		if err := json.Unmarshal(body, &data); err == nil {
 			items := data["items"].([]interface{})
+			var results []map[string]string
+
 			if len(items) > 0 {
 				// 获取 crawlTimeMsec，假设它是一个字符串
 				crawlTimeStr := items[0].(map[string]interface{})["crawlTimeMsec"].(string)
@@ -279,13 +295,12 @@ func rssFetchFeed(feedID, feedTitle, authToken string) string {
 					newOTMap[feedID] = newOT
 				}
 
-				var content strings.Builder
-				content.WriteString(fmt.Sprintf("<h2>%s</h2>\n", feedTitle))
 				for _, item := range items {
 					title := item.(map[string]interface{})["title"].(string)
 					cnTitle := translate(title)
 					href := item.(map[string]interface{})["canonical"].([]interface{})[0].(map[string]interface{})["href"].(string)
-					// for hacker news, use comment link
+
+					// For hacker news, use comment link
 					if strings.Contains(withContentFeeds, feedID) {
 						summary_content := item.(map[string]interface{})["summary"].(map[string]interface{})["content"].(string)
 						match := hn_regex.FindString(summary_content)
@@ -293,14 +308,19 @@ func rssFetchFeed(feedID, feedTitle, authToken string) string {
 							href = match
 						}
 					}
-					content.WriteString(fmt.Sprintf("<li>%s <a href=%s target=\"_blank\">%s</a></li>", cnTitle, href, title))
+
+					results = append(results, map[string]string{
+						"cnTitle": cnTitle,
+						"title":   title,
+						"link":    href,
+					})
 					time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 				}
-				return content.String()
+				return results
 			}
 		}
 	}
-	return ""
+	return nil
 }
 
 func translate(text string) string {
@@ -333,7 +353,6 @@ func translate(text string) string {
 		return ""
 	}
 
-	// [[["翻译结果",...]]]
 	if len(result) > 0 {
 		firstItem, ok := result[0].([]interface{})
 		if ok && len(firstItem) > 0 {
