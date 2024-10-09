@@ -64,9 +64,11 @@ func AsyncTask() {
 			location, _ := time.LoadLocation("Asia/Shanghai")
 			subject := fmt.Sprintf("RSS %s", time.Now().In(location).Format("2006-01-02 15:04:05"))
 			InsertPost(postID, subject)
+			otMap = newOTMap
 		} else {
 			logger.Println("No updates.")
 		}
+		logger.Println("End current loop.")
 		time.Sleep(time.Duration(pollIntervalSeconds) * time.Second)
 	}
 }
@@ -182,7 +184,6 @@ func fetchFeed(postID, feedID, feedTitle, authToken string) []PostItem {
 			items := data["items"].([]interface{})
 
 			if len(items) > 0 {
-				// 获取 crawlTimeMsec，假设它是一个字符串
 				crawlTimeStr := items[0].(map[string]interface{})["crawlTimeMsec"].(string)
 				crawlTimeInt, err := strconv.ParseInt(crawlTimeStr, 10, 64)
 				if err != nil {

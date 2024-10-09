@@ -38,15 +38,12 @@
                     document.getElementById("post-title").innerText = data.title;
 
                     const parsedContent = JSON.parse(data.content);
-                    console.log("data.content: " + data.content);
 
                     // 获取新闻容器
                     const newsContainer = document.getElementById('news-container');
 
                     // 遍历解析后的对象
                     for (const newsCategory in parsedContent) {
-                        console.log("newsCategory: " + newsCategory);
-                        // 创建 h2 元素
                         const h2 = document.createElement('h2');
                         h2.innerText = newsCategory;
                         newsContainer.appendChild(h2);
@@ -76,7 +73,6 @@
                             button.innerText = "💾";
                             button.onclick = async function () {
                                 const postItemID = li.getAttribute('post-item-id');
-                                console.log("postItemID: " + postItemID);
                                 const memoContent = `${newsItemContent.cnTitle}\n${newsItemContent.title}\n${newsItemContent.link}\n#rss`;
 
                                 // 发送 POST 请求到 createMemo

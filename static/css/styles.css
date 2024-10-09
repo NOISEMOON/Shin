@@ -5,11 +5,11 @@ html {
 
 .post-item {
     text-align: left;
-    margin-top: 5px;
+    margin-top: 10px;
 }
 
 li {
-    margin-bottom: 15px;
+    margin-bottom: 20px;
 }
 
 /* 未读 post 链接样式 */
