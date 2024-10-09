@@ -8,7 +8,6 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"net/smtp"
 	"net/url"
 	"os"
 	"regexp"
@@ -20,15 +19,8 @@ import (
 	"github.com/joho/godotenv"
 )
 
-type EmailSender struct {
-	smtpServer string
-	smtpPort   int
-	login      string
-	password   string
-}
-
 var (
-	DB_PATH                     = "/data/shin.db"
+	DB_PATH                     = "/data/shin_v2.db"
 	_                           = godotenv.Load("/data/.env")
 	logger                      = log.New(os.Stdout, "", log.LstdFlags)
 	hn_regex                    = regexp.MustCompile(`https://news\.ycombinator\.com/item\?id=\d+`)
@@ -38,11 +30,6 @@ var (
 	freshrssListSubscriptionURL = os.Getenv("FRESHRSS_LIST_SUBSCRIPTION_URL")
 	freshrssContentURLPrefix    = os.Getenv("FRESHRSS_CONTENT_URL_PREFIX")
 	freshrssFilteredLabel       = os.Getenv("FRESHRSS_FILTERED_LABEL")
-	senderEmail                 = os.Getenv("SENDER_EMAIL")
-	senderAuthToken             = os.Getenv("SENDER_AUTH_TOKEN")
-	smtpServer                  = os.Getenv("SMTP_SERVER")
-	smtpPort, _                 = strconv.Atoi(os.Getenv("SMTP_PORT"))
-	receiverEmail               = os.Getenv("RECEIVER_EMAIL")
 	defaultOT                   = os.Getenv("DEFAULT_OT")
 	otMapJSON                   = os.Getenv("OT_MAP_JSON")
 	withContentFeeds            = os.Getenv("WITH_CONTENT_FEEDS")
@@ -71,92 +58,17 @@ func AsyncTask() {
 
 	authToken := rssAuth()
 
-	emailSender := &EmailSender{
-		smtpServer: smtpServer,
-		smtpPort:   smtpPort,
-		login:      senderEmail,
-		password:   senderAuthToken,
-	}
-
 	for {
-		data, err := fetchNews(authToken)
-		logger.Printf("fetchNews data: %s", data)
-		if err != nil {
-			logger.Println("Fetch news error: ", err)
-			continue
-		}
-		if data != "" && data != "{}" {
+		postID, postItems := fetchNews(authToken)
+		if len(postItems) > 0 {
 			location, _ := time.LoadLocation("Asia/Shanghai")
 			subject := fmt.Sprintf("RSS %s", time.Now().In(location).Format("2006-01-02 15:04:05"))
-			CreatePostDB(subject, data)
-			if emailSender.SendEmail(senderEmail, receiverEmail, subject, data) {
-				logger.Println("Email sent successfully.")
-				newOTMapJson, _ := json.MarshalIndent(newOTMap, "", " ")
-				logger.Printf("Update otMap: %v newOTMap: %s", otMap, string(newOTMapJson))
-				otMap = newOTMap
-			}
-
+			InsertPost(postID, subject)
 		} else {
-			logger.Println("No updates. Don't send email.")
+			logger.Println("No updates.")
 		}
 		time.Sleep(time.Duration(pollIntervalSeconds) * time.Second)
 	}
-}
-
-func (e *EmailSender) SendEmail(from, to, subject, body string) bool {
-	msg := fmt.Sprintf("From: %s\nTo: %s\nSubject: %s\n\n%s", from, to, subject, body)
-
-	// 连接到 SMTP 服务器
-	client, err := smtp.Dial(fmt.Sprintf("%s:%d", e.smtpServer, e.smtpPort))
-	if err != nil {
-		logger.Println("Failed to connect to SMTP server:", err)
-		return false
-	}
-	defer client.Close()
-
-	// 跳过 TLS 证书验证
-	tlsConfig := &tls.Config{
-		ServerName:         e.smtpServer,
-		InsecureSkipVerify: true, // 跳过 TLS 证书验证
-	}
-
-	// 启动 TLS
-	if err := client.StartTLS(tlsConfig); err != nil {
-		logger.Println("Failed to start TLS:", err)
-		return false
-	}
-
-	// 进行身份验证
-	auth := smtp.PlainAuth("", e.login, e.password, e.smtpServer)
-	if err := client.Auth(auth); err != nil {
-		logger.Println("Failed to authenticate:", err)
-		return false
-	}
-
-	// 设置发送者和接收者
-	if err := client.Mail(from); err != nil {
-		logger.Println("Failed to set mail sender:", err)
-		return false
-	}
-	if err := client.Rcpt(to); err != nil {
-		logger.Println("Failed to set mail recipient:", err)
-		return false
-	}
-
-	// 写入邮件内容
-	writer, err := client.Data()
-	if err != nil {
-		logger.Println("Failed to get writer for mail content:", err)
-		return false
-	}
-	_, err = writer.Write([]byte(msg))
-	if err != nil {
-		logger.Println("Failed to write email content:", err)
-		return false
-	}
-	writer.Close()
-
-	return true
 }
 
 func rssAuth() string {
@@ -182,28 +94,23 @@ func rssAuth() string {
 	return ""
 }
 
-func fetchNews(authToken string) (string, error) {
+func fetchNews(authToken string) (string, []PostItem) {
+	postID := strconv.FormatInt(time.Now().UnixNano(), 10)
 	subs := fetchSub(authToken)
-	data := make(map[string][]map[string]string)
 
+	var allPostItems []PostItem
 	for _, sub := range subs {
 		feedID := sub["id"].(string)
 		feedTitle := sub["title"].(string)
-		feedContent := fetchFeed(feedID, feedTitle, authToken)
-
-		if len(feedContent) > 0 {
-			data[feedTitle] = feedContent
+		postItems := fetchFeed(postID, feedID, feedTitle, authToken)
+		if len(postItems) > 0 {
+			InsertPostItems(postItems)
+			allPostItems = append(allPostItems, postItems...)
 		} else {
 			logger.Println("No updates from", feedID, feedTitle)
 		}
 	}
-
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal JSON: %w", err)
-	}
-
-	return string(jsonData), nil
+	return postID, allPostItems
 }
 
 func fetchSub(authToken string) []map[string]interface{} {
@@ -244,7 +151,7 @@ func fetchSub(authToken string) []map[string]interface{} {
 	return enSub
 }
 
-func fetchFeed(feedID, feedTitle, authToken string) []map[string]string {
+func fetchFeed(postID, feedID, feedTitle, authToken string) []PostItem {
 	ot := otMap[feedID]
 	logger.Printf("feedID: %s feedTitle: %s ot: %s defaultOT: %s", feedID, feedTitle, ot, defaultOT)
 	if ot == "" {
@@ -270,9 +177,9 @@ func fetchFeed(feedID, feedTitle, authToken string) []map[string]string {
 	if resp.StatusCode == 200 {
 		body, _ := io.ReadAll(resp.Body)
 		var data map[string]interface{}
+		var postItems []PostItem
 		if err := json.Unmarshal(body, &data); err == nil {
 			items := data["items"].([]interface{})
-			var results []map[string]string
 
 			if len(items) > 0 {
 				// 获取 crawlTimeMsec，假设它是一个字符串
@@ -300,14 +207,27 @@ func fetchFeed(feedID, feedTitle, authToken string) []map[string]string {
 						}
 					}
 
-					results = append(results, map[string]string{
-						"cnTitle": cnTitle,
-						"title":   title,
-						"link":    href,
+					postItemContent := PostItemContent{
+						CnTitle: cnTitle,
+						Title:   title,
+						Link:    href,
+					}
+
+					postItemContentJSON, _ := json.Marshal(postItemContent)
+					postItemContentJSONString := string(postItemContentJSON)
+
+					postItems = append(postItems, PostItem{
+						ID:        strconv.FormatInt(time.Now().UnixNano(), 10),
+						PostID:    postID,
+						FeedTitle: feedTitle,
+						Content:   postItemContentJSONString,
+						MemoID:    "",
 					})
+
 					time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 				}
-				return results
+
+				return postItems
 			}
 		}
 	}

@@ -17,6 +17,7 @@ type MemoRequest struct {
 }
 
 type ClientMemoRequest struct {
+	PostItemID  string `json:"postItemID"`
 	MemoContent string `json:"memoContent"`
 }
 
@@ -76,6 +77,13 @@ func CreateMemo(c *gin.Context) {
 		c.JSON(resp.StatusCode, gin.H{"error": string(body)})
 		return
 	}
+
+	var respData map[string]interface{}
+	json.Unmarshal(body, &respData)
+
+	uid := respData["uid"].(string)
+
+	UpdateMemoID(input.PostItemID, uid)
 
 	// 返回成功消息
 	c.JSON(http.StatusOK, gin.H{"message": "Memo created successfully!"})

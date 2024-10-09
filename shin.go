@@ -2,6 +2,8 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -20,6 +22,20 @@ type Post struct {
 	ReadAt    string `json:"read_at"`
 }
 
+type PostItem struct {
+	ID        string `json:"id"`
+	PostID    string `json:"post_id"`
+	FeedTitle string `json:"feed_title"`
+	Content   string `json:"content"`
+	MemoID    string `json:"memo_id"`
+}
+
+type PostItemContent struct {
+	CnTitle string `json:"cnTitle"`
+	Title   string `json:"title"`
+	Link    string `json:"link"`
+}
+
 var db *sql.DB
 var authToken string
 
@@ -32,15 +48,25 @@ func initDB() {
 	}
 
 	// Create the table if it doesn't exist
-	createTableSQL := `CREATE TABLE IF NOT EXISTS shin_post (
+	createPostTableSQL := `CREATE TABLE IF NOT EXISTS shin_post (
 		id TEXT PRIMARY KEY,
 		title TEXT,
-		content TEXT,
 		created_at TEXT,
 		read_at TEXT
 	);`
-	if _, err := db.Exec(createTableSQL); err != nil {
-		panic("failed to create table")
+	if _, err := db.Exec(createPostTableSQL); err != nil {
+		panic("failed to create shin_post")
+	}
+
+	createPostItemTableSQL := `CREATE TABLE IF NOT EXISTS shin_post_item (
+		id TEXT PRIMARY KEY,
+		post_id TEXT,
+		feed_title TEXT,
+		content TEXT,
+		memo_id TEXT
+	);`
+	if _, err := db.Exec(createPostItemTableSQL); err != nil {
+		panic("failed to create shin_post_item")
 	}
 }
 
@@ -72,39 +98,110 @@ func authMiddleware(c *gin.Context) {
 	c.Next()
 }
 
-// createPost handler
-func createPost(c *gin.Context) {
-	var input struct {
-		Title   string `json:"title"`
-		Content string `json:"content"`
-	}
-
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	post := CreatePostDB(input.Title, input.Content)
-
-	c.JSON(http.StatusOK, post)
-}
-
-func CreatePostDB(title, content string) Post {
+func InsertPost(postID, title string) {
 	post := Post{
-		ID:        strconv.FormatInt(time.Now().UnixNano(), 10),
+		ID:        postID,
 		Title:     title,
-		Content:   content,
 		CreatedAt: strconv.FormatInt(time.Now().Unix(), 10),
 		ReadAt:    "0", // initially unread
 	}
 
-	_, err := db.Exec("INSERT INTO shin_post (id, title, content, created_at, read_at) VALUES (?, ?, ?, ?, ?)",
-		post.ID, post.Title, post.Content, post.CreatedAt, post.ReadAt)
+	_, err := db.Exec("INSERT INTO shin_post (id, title, created_at, read_at) VALUES (?, ?, ?, ?)",
+		post.ID, post.Title, post.CreatedAt, post.ReadAt)
 	if err != nil {
 		panic(err) // Handle error appropriately in production
 	}
+}
 
-	return post
+func InsertPostItems(items []PostItem) error {
+	// 启动事务
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	// 准备插入SQL
+	stmt, err := tx.Prepare(`INSERT INTO shin_post_item (id, post_id, feed_title, content, memo_id) VALUES (?, ?, ?, ?, ?)`)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to prepare insert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	// 批量插入
+	for _, item := range items {
+		_, err := stmt.Exec(item.ID, item.PostID, item.FeedTitle, item.Content, item.MemoID)
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to execute insert statement: %w", err)
+		}
+	}
+
+	// 提交事务
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+func getPostItemsGroupedByFeedTitle(postID string) (map[string][]PostItem, error) {
+	// 查询 shin_post_item 表的所有记录
+	rows, err := db.Query(`SELECT id, feed_title, content, memo_id FROM shin_post_item WHERE post_id = ?`, postID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query post items: %w", err)
+	}
+	defer rows.Close()
+
+	// 用于存储分组结果
+	groupedItems := make(map[string][]PostItem)
+
+	for rows.Next() {
+		var postItemID string
+		var feedTitle string
+		var contentStr string
+		var memoID string
+		if err := rows.Scan(&postItemID, &feedTitle, &contentStr, &memoID); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		// 将 content 字符串解析为 JSON 对象
+		var content PostItemContent
+		if err := json.Unmarshal([]byte(contentStr), &content); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal content: %w", err)
+		}
+
+		// 按 feed_title 分组
+		groupedItems[feedTitle] = append(groupedItems[feedTitle], PostItem{
+			ID:        postItemID,
+			PostID:    postID,
+			FeedTitle: feedTitle,
+			Content:   contentStr,
+			MemoID:    memoID,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error occurred during row iteration: %w", err)
+	}
+
+	return groupedItems, nil
+}
+
+func getGroupedPostItemsAsJSON(postID string) (string, error) {
+	// 获取按 feed_title 分组的内容
+	groupedItems, err := getPostItemsGroupedByFeedTitle(postID)
+	if err != nil {
+		return "", err
+	}
+
+	// 将分组后的数据转换为 JSON 字符串
+	jsonBytes, err := json.Marshal(groupedItems)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal grouped items to JSON: %w", err)
+	}
+
+	return string(jsonBytes), nil
 }
 
 func markRead(c *gin.Context) {
@@ -128,11 +225,20 @@ func markRead(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Post marked as read"})
 }
 
+func UpdateMemoID(postItemID, memoID string) {
+	logger.Println("UpdateMemoID: ", postItemID, memoID)
+	_, err := db.Exec("UPDATE shin_post_item SET memo_id = ? WHERE id = ?", memoID, postItemID)
+	if err != nil {
+		logger.Println("failed to update memo_id")
+		panic(err)
+	}
+}
+
 func getDetail(c *gin.Context) {
 	postID := c.Query("id")
 	logger.Println("getDetail: ", postID)
 	var post Post
-	err := db.QueryRow("SELECT id, title, content, created_at, read_at FROM shin_post WHERE id = ?", postID).Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.ReadAt)
+	err := db.QueryRow("SELECT id, title, created_at, read_at FROM shin_post WHERE id = ?", postID).Scan(&post.ID, &post.Title, &post.CreatedAt, &post.ReadAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Post not found"})
@@ -142,6 +248,8 @@ func getDetail(c *gin.Context) {
 		return
 	}
 
+	content, _ := getGroupedPostItemsAsJSON(postID)
+	post.Content = content
 	c.JSON(http.StatusOK, post)
 }
 
@@ -160,7 +268,7 @@ func pagePost(c *gin.Context) {
 	}
 	totalPage := (totalPosts + int64(pageSize) - 1) / int64(pageSize)
 
-	rows, err := db.Query("SELECT id, title, content, created_at, read_at FROM shin_post ORDER BY created_at DESC LIMIT ? OFFSET ?", pageSize, (pageNumber-1)*pageSize)
+	rows, err := db.Query("SELECT id, title, created_at, read_at FROM shin_post ORDER BY created_at DESC LIMIT ? OFFSET ?", pageSize, (pageNumber-1)*pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching posts"})
 		return
@@ -169,7 +277,7 @@ func pagePost(c *gin.Context) {
 
 	for rows.Next() {
 		var post Post
-		if err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.ReadAt); err != nil {
+		if err := rows.Scan(&post.ID, &post.Title, &post.CreatedAt, &post.ReadAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error scanning post"})
 			return
 		}
@@ -198,7 +306,7 @@ func processLogin(c *gin.Context) {
 	// 验证 token
 	if input.Token == authToken {
 		// 设置客户端的 token
-		c.SetCookie("token", input.Token, 3600, "/", "", false, true)
+		c.SetCookie("token", input.Token, 3600*24*365, "/", "", false, true)
 
 		// 登录成功，重定向到首页
 		c.Redirect(http.StatusFound, "/post_list")
@@ -245,7 +353,6 @@ func main() {
 
 	// REST API routes
 	r.POST("/login", processLogin)
-	r.POST("/create_post", createPost)
 	r.POST("/mark_read", markRead)
 	r.GET("/page_post", pagePost)
 	r.GET("/get_detail", getDetail)

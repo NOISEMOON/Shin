@@ -38,7 +38,7 @@
                     document.getElementById("post-title").innerText = data.title;
 
                     const parsedContent = JSON.parse(data.content);
-                    console.log("parsedContent: " + parsedContent);
+                    console.log("data.content: " + data.content);
 
                     // 获取新闻容器
                     const newsContainer = document.getElementById('news-container');
@@ -57,12 +57,16 @@
                         // 遍历每个新闻项
                         parsedContent[newsCategory].forEach(newsItem => {
                             const li = document.createElement('li');
-                            li.innerText = newsItem.cnTitle + " ";
+                            const newsItemContent = JSON.parse(newsItem["content"])
+                            li.innerText = newsItemContent.cnTitle + " ";
+
+                            const memoID = newsItem["memo_id"];
+                            li.setAttribute('post-item-id', newsItem["id"]); // TODO
 
                             // 创建链接
                             const link = document.createElement('a');
-                            link.href = newsItem.link;
-                            link.innerText = `${newsItem.title}`;
+                            link.href = newsItemContent.link;
+                            link.innerText = `${newsItemContent.title}`;
                             link.target = "_blank"; // 在新标签页打开链接
 
                             li.appendChild(link);
@@ -71,7 +75,9 @@
                             const button = document.createElement('button');
                             button.innerText = "💾";
                             button.onclick = async function () {
-                                const memoContent = `${newsItem.cnTitle}\n${newsItem.title}\n${newsItem.link}\n#rss`;
+                                const postItemID = li.getAttribute('post-item-id');
+                                console.log("postItemID: " + postItemID);
+                                const memoContent = `${newsItemContent.cnTitle}\n${newsItemContent.title}\n${newsItemContent.link}\n#rss`;
 
                                 // 发送 POST 请求到 createMemo
                                 const response = await fetch('/createMemo', {
@@ -79,20 +85,25 @@
                                     headers: {
                                         'Content-Type': 'application/json'
                                     },
-                                    body: JSON.stringify({ memoContent: memoContent })
+                                    body: JSON.stringify({ postItemID: postItemID, memoContent: memoContent })
                                 });
 
                                 // 根据返回结果提示成功或失败
                                 const result = await response.json();
                                 if (response.ok) {
                                     alert('Memo created successfully!');
+                                    location.reload();
                                 } else {
                                     alert('Failed to create memo: ' + result.error);
                                 }
                             };
 
                             li.appendChild(button);
-
+                            if (memoID) {
+                                const emojiIcon = document.createElement('span');
+                                emojiIcon.textContent = ' ✅';
+                                li.appendChild(emojiIcon);
+                            }
                             ul.appendChild(li);
                         });
 
