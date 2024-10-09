@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inbox</title>
+    <link rel="stylesheet" type="text/css" href="/static/css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <h1><a href="#" onclick="location.reload(); return false;">Inbox</a></h1>
+    <div id="search-box">
+        <input type="text" id="keyword" placeholder="Enter keyword">
+        <button onclick="searchPosts()">🔍</button>
+    </div>
+
+    <div id="post-list"></div>
+
+    <div id="post-content" style="display: none;">
+        <div id="news-container"></div>
+    </div>
+
+    <div id="pagination">
+        <span id="page-info"></span> <!-- 显示当前页面和总页码 -->
+        <div>
+            <a href="#" id="prev-link" style="display:none;">← Previous</a>
+            <a href="#" id="next-link" style="display:none;">Next →</a>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1; // 当前页面
+        let totalPages = 1; // 总页码
+
+        async function loadPosts(pageNumber) {
+            const response = await fetch(`/page_post?page_number=${pageNumber}&page_size=10`, {
+                method: 'GET'
+            });
+            const data = await response.json();
+            const postList = document.getElementById('post-list');
+
+            // 清空列表
+            postList.innerHTML = '';
+            totalPages = data.total_page; // 获取总页码
+
+            data.data.forEach(post => {
+                const postDiv = document.createElement('div');
+                postDiv.className = 'post-item';
+                const linkClass = post.read_at !== "0" ? "read-link" : "unread-link"; // 选择类名
+
+                postDiv.innerHTML = `
+                    ${post.read_at !== "0" ? " ◉" : " ○"}
+                    <a href="/detail?id=${post.id}" class="${linkClass}">${post.title}</a>
+                `;
+                postList.appendChild(postDiv);
+            });
+
+            // 更新当前页面信息
+            document.getElementById('page-info').innerText = `Page ${pageNumber} of ${totalPages}`;
+
+            // 显示/隐藏翻页链接
+            document.getElementById('prev-link').style.display = pageNumber > 1 ? 'inline' : 'none';
+            document.getElementById('next-link').style.display = pageNumber < totalPages ? 'inline' : 'none';
+        }
+
+        async function searchPosts() {
+            const keyword = document.getElementById('keyword').value;
+            const response = await fetch(`/search?keyword=${encodeURIComponent(keyword)}`);
+            const result = await response.json();
+
+            // 获取新闻容器
+            const newsContainer = document.getElementById('news-container');
+
+            if (result.length === 0) {
+                newsContainer.innerHTML = '<p>No results found</p>';
+                return;
+            }
+
+            // 创建 ul 元素
+            const ul = document.createElement('ul');
+
+            // 遍历每个新闻项
+            result.forEach(newsItem => {
+                const li = document.createElement('li');
+                const newsItemContent = JSON.parse(newsItem["content"])
+                li.innerText = newsItemContent.cnTitle + " ";
+
+                const memoID = newsItem["memo_id"];
+                li.setAttribute('post-item-id', newsItem["id"]); // TODO
+
+                // 创建链接
+                const link = document.createElement('a');
+                link.href = newsItemContent.link;
+                link.innerText = `${newsItemContent.title}`;
+                link.target = "_blank"; // 在新标签页打开链接
+
+                li.appendChild(link);
+                li.append(" ");
+
+                const button = document.createElement('button');
+                button.innerText = "💾";
+                button.onclick = async function () {
+                    const postItemID = li.getAttribute('post-item-id');
+                    console.log("postItemID: " + postItemID);
+                    const memoContent = `${newsItemContent.cnTitle}\n${newsItemContent.title}\n${newsItemContent.link}\n#rss`;
+
+                    // 发送 POST 请求到 createMemo
+                    const response = await fetch('/createMemo', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ postItemID: postItemID, memoContent: memoContent })
+                    });
+
+                    // 根据返回结果提示成功或失败
+                    const result = await response.json();
+                    if (response.ok) {
+                        alert('Memo created successfully!');
+                        location.reload();
+                    } else {
+                        alert('Failed to create memo: ' + result.error);
+                    }
+                };
+
+                li.appendChild(button);
+                if (memoID) {
+                    const emojiIcon = document.createElement('span');
+                    emojiIcon.textContent = ' ✅';
+                    li.appendChild(emojiIcon);
+                }
+                ul.appendChild(li);
+            });
+
+            newsContainer.appendChild(ul);
+            document.getElementById('post-content').style.display = 'inline';
+            document.getElementById('post-list').style.display = 'none';
+            document.getElementById('pagination').style.display = 'none';
+        }
+
+        // 点击向前翻页
+        document.getElementById('prev-link').addEventListener('click', (event) => {
+            event.preventDefault(); // 防止默认行为
+            if (currentPage > 1) {
+                currentPage--;
+                loadPosts(currentPage);
+            }
+        });
+
+        // 点击向后翻页
+        document.getElementById('next-link').addEventListener('click', (event) => {
+            event.preventDefault(); // 防止默认行为
+            if (currentPage < totalPages) {
+                currentPage++;
+                loadPosts(currentPage);
+            }
+        });
+
+        document.addEventListener("DOMContentLoaded", loadPosts(currentPage));
+    </script>
+</body>
+
+</html>

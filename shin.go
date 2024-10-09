@@ -290,6 +290,35 @@ func pagePost(c *gin.Context) {
 	})
 }
 
+func searchPostItems(c *gin.Context) {
+	keyword := c.Query("keyword")
+	logger.Println("search keyword:", keyword)
+	query := fmt.Sprintf("SELECT id, post_id, feed_title, content, memo_id FROM shin_post_item WHERE content LIKE '%%%s%%'", keyword)
+	rows, err := db.Query(query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to execute query"})
+		return
+	}
+	defer rows.Close()
+
+	var postItems []PostItem
+	for rows.Next() {
+		var item PostItem
+		if err := rows.Scan(&item.ID, &item.PostID, &item.FeedTitle, &item.Content, &item.MemoID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan result"})
+			return
+		}
+		postItems = append(postItems, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error after scanning results"})
+		return
+	}
+
+	c.JSON(http.StatusOK, postItems)
+}
+
 // 处理登录请求
 func processLogin(c *gin.Context) {
 	var input struct {
@@ -309,7 +338,7 @@ func processLogin(c *gin.Context) {
 		c.SetCookie("token", input.Token, 3600*24*365, "/", "", false, true)
 
 		// 登录成功，重定向到首页
-		c.Redirect(http.StatusFound, "/post_list")
+		c.Redirect(http.StatusFound, "/home")
 	} else {
 		// token 不匹配，返回登录页面
 		c.HTML(http.StatusOK, "login.html", gin.H{
@@ -340,15 +369,15 @@ func main() {
 	})
 
 	r.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "post_list.html", gin.H{})
+		c.HTML(http.StatusOK, "home.html", gin.H{})
 	})
 
-	r.GET("/post_list", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "post_list.html", gin.H{})
+	r.GET("/home", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "home.html", gin.H{})
 	})
 
-	r.GET("/post_detail", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "post_detail.html", gin.H{})
+	r.GET("/detail", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "detail.html", gin.H{})
 	})
 
 	// REST API routes
@@ -357,6 +386,7 @@ func main() {
 	r.GET("/page_post", pagePost)
 	r.GET("/get_detail", getDetail)
 	r.POST("/createMemo", CreateMemo)
+	r.GET("/search", searchPostItems)
 
 	r.Run(":8777")
 }

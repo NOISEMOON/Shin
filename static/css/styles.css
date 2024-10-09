@@ -61,3 +61,7 @@ a {
     display: none;
     /* 初始隐藏 */
 }
+
+#search-box {
+    margin-bottom: 20px;
+}
