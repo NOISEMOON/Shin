@@ -380,6 +380,10 @@ func main() {
 		c.HTML(http.StatusOK, "detail.html", gin.H{})
 	})
 
+	r.GET("/tools", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "tools.html", gin.H{})
+	})
+
 	// REST API routes
 	r.POST("/login", processLogin)
 	r.POST("/mark_read", markRead)

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tools</title>
+    <link rel="stylesheet" type="text/css" href="/static/css/styles.css">
+    <style>
+        textarea {
+            width: 100%;
+            background-color: #f4f4f4;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            box-sizing: border-box;
+            font-family: "Fira Code", monospace;
+            font-size: 14px;
+            line-height: 1.5em;
+            flex-grow: 1;
+            /* This makes the textarea grow to fill available space */
+        }
+
+        button {
+            font-family: "Fira Code", monospace;
+            margin-bottom: 10px;
+        }
+
+        .controls {
+            padding: 10px;
+            background-color: #fafafa;
+        }
+    </style>
+</head>
+
+<body>
+    <h1><a href="/home">Home</a><span> </span><a href="/tools">Tools</a></h1>
+    <div class="controls">
+        <button onclick="formatJSON()">Format JSON</button>
+        <button onclick="copyFormattedJSON()">Copy JSON</button>
+        <button onclick="insertTimestamp()">Timestamp</button>
+        <button onclick="convertTime()">Time</button>
+        <button onclick="clearText()">Clear</button>
+    </div>
+    <textarea id="jsonInput" rows="100" cols="100" placeholder="Paste your JSON here"></textarea>
+
+    <script>
+        function clearText() {
+            const input = document.getElementById('jsonInput');
+            input.value = "";
+        }
+
+        function formatJSON() {
+            const input = document.getElementById('jsonInput');
+            try {
+                const parsedJSON = JSON.parse(input.value);
+                const formattedJSON = JSON.stringify(parsedJSON, null, 4);
+                input.value = formattedJSON;
+            } catch (e) {
+                alert('Invalid JSON');
+            }
+        }
+
+        function copyFormattedJSON() {
+            const jsonInput = document.getElementById('jsonInput');
+            const formattedJSON = jsonInput.value;
+
+            navigator.clipboard.writeText(formattedJSON)
+                .then(() => {
+                    alert('Formatted JSON copied to clipboard!');
+                })
+                .catch(err => {
+                    alert('Failed to copy JSON: ' + err);
+                });
+        }
+
+        function insertTimestamp() {
+            const input = document.getElementById('jsonInput');
+            const now = new Date();
+            const timestamp = now.getTime();
+            const unixTimestamp = Math.floor(timestamp / 1000);
+            const utcString = now.toISOString().slice(0, 19).replace('T', ' '); // Format YYYY-MM-DD hh:mm:ss
+            input.value += `Timestamp: ${timestamp}\nUnix: ${unixTimestamp}\nUTC: ${utcString}\n\n`;
+        }
+
+        function convertTime() {
+            const input = document.getElementById('jsonInput');
+            var timestamp = parseFloat(input.value.trim());
+            if (input.value.length == 13) {
+                timestamp = Math.floor(timestamp / 1000);
+            }
+            let utcTime;
+
+            if (!isNaN(timestamp)) {
+                // If it's a unix timestamp
+                utcTime = new Date(timestamp * 1000).toISOString().slice(0, 19).replace('T', ' '); // Format YYYY-MM-DD hh:mm:ss
+            } else {
+                // If it's a UTC time in the format YYYY-MM-DD hh:mm:ss
+                const regex = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+                if (regex.test(input.value.trim())) {
+                    utcTime = input.value.trim();
+                } else {
+                    alert('Please enter a valid Unix timestamp or UTC time.');
+                    return;
+                }
+            }
+
+            input.value += `\nConverted Time: ${utcTime}\n\n`;
+        }
+    </script>
+</body>
+
+</html>
