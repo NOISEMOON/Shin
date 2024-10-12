@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	DB_PATH                     = "data/shin_v2.db"
-	_                           = godotenv.Load("data/.env")
+	DB_PATH                     = "/data/shin_v2.db"
+	_                           = godotenv.Load("/data/.env")
 	logger                      = log.New(os.Stdout, "", log.LstdFlags)
 	hn_regex                    = regexp.MustCompile(`https://news\.ycombinator\.com/item\?id=\d+`)
 	pollIntervalSeconds, _      = strconv.Atoi(os.Getenv("POLL_INTERVAL_SECONDS"))
