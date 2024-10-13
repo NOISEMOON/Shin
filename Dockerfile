@@ -12,7 +12,7 @@ RUN go mod download
 # 复制源代码
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o shin .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -buildvcs=false -o shin .
 
 FROM alpine:latest
 
