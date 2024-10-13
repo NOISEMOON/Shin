@@ -20,6 +20,6 @@ docker run \
   -e OT_MAP_JSON="{"feed/79": "1728017013"}" \
   shin
 
-docker buildx build --platform linux/arm64 -t shin:v1 --load .
-docker save -o shin_v1.tar shin:v1
+docker buildx build --platform linux/arm64 -t shin:v2 --load .
+docker save -o shin_v2.tar shin:v2
 

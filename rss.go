@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	DB_PATH                     = "/data/shin_v2.db"
-	_                           = godotenv.Load("/data/.env")
+	DB_PATH                     = "data/shin_v2.db"
+	_                           = godotenv.Load("data/.env")
 	logger                      = log.New(os.Stdout, "", log.LstdFlags)
 	hn_regex                    = regexp.MustCompile(`https://news\.ycombinator\.com/item\?id=\d+`)
 	pollIntervalSeconds, _      = strconv.Atoi(os.Getenv("POLL_INTERVAL_SECONDS"))
@@ -33,6 +33,7 @@ var (
 	defaultOT                   = os.Getenv("DEFAULT_OT")
 	otMapJSON                   = os.Getenv("OT_MAP_JSON")
 	withContentFeeds            = os.Getenv("WITH_CONTENT_FEEDS")
+	IMPORTANT_FEEDS             = os.Getenv("IMPORTANT_FEEDS")
 	otMap                       map[string]string
 	newOTMap                    map[string]string
 )
@@ -46,6 +47,7 @@ func init() {
 
 func AsyncTask() {
 	logger.Println("Starting loop...")
+	logger.Println("pollIntervalSeconds", pollIntervalSeconds)
 	otMap = make(map[string]string)
 	newOTMap = make(map[string]string)
 	if defaultOT == "" {

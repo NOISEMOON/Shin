@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -319,6 +320,41 @@ func searchPostItems(c *gin.Context) {
 	c.JSON(http.StatusOK, postItems)
 }
 
+func getImportantFeeds(c *gin.Context) {
+	params := strings.Split(IMPORTANT_FEEDS, ",")
+	for i := range params {
+		params[i] = fmt.Sprintf("'%s'", strings.TrimSpace(params[i]))
+	}
+
+	query := fmt.Sprintf("SELECT id, post_id, feed_title, content, memo_id FROM shin_post_item WHERE feed_title IN (%s) LIMIT 1000", strings.Join(params, ","))
+
+	logger.Println("getImportantFeeds:", query)
+
+	rows, err := db.Query(query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to execute query"})
+		return
+	}
+	defer rows.Close()
+
+	var postItems []PostItem
+	for rows.Next() {
+		var item PostItem
+		if err := rows.Scan(&item.ID, &item.PostID, &item.FeedTitle, &item.Content, &item.MemoID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan result"})
+			return
+		}
+		postItems = append(postItems, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error after scanning results"})
+		return
+	}
+
+	c.JSON(http.StatusOK, postItems)
+}
+
 // 处理登录请求
 func processLogin(c *gin.Context) {
 	var input struct {
@@ -386,11 +422,11 @@ func main() {
 
 	// REST API routes
 	r.POST("/login", processLogin)
-	r.POST("/mark_read", markRead)
-	r.GET("/page_post", pagePost)
-	r.GET("/get_detail", getDetail)
+	r.POST("/markRead", markRead)
+	r.GET("/pagePost", pagePost)
+	r.GET("/getDetail", getDetail)
 	r.POST("/createMemo", CreateMemo)
 	r.GET("/search", searchPostItems)
-
+	r.GET("/getImportant", getImportantFeeds)
 	r.Run(":8777")
 }
