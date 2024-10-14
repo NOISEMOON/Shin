@@ -34,6 +34,7 @@ var (
 	otMapJSON                   = os.Getenv("OT_MAP_JSON")
 	withContentFeeds            = os.Getenv("WITH_CONTENT_FEEDS")
 	IMPORTANT_FEEDS             = os.Getenv("IMPORTANT_FEEDS")
+	OT_MAP_KEY                  = "otMap"
 	otMap                       map[string]string
 	newOTMap                    map[string]string
 )
@@ -48,7 +49,7 @@ func init() {
 func AsyncTask() {
 	logger.Println("Starting loop...")
 	logger.Println("pollIntervalSeconds", pollIntervalSeconds)
-	otMap = make(map[string]string)
+	otMap = GetOtMap()
 	newOTMap = make(map[string]string)
 	if defaultOT == "" {
 		// 默认从6小时前拉取
@@ -67,6 +68,7 @@ func AsyncTask() {
 			subject := fmt.Sprintf("RSS %s", time.Now().In(location).Format("2006-01-02 15:04:05"))
 			InsertPost(postID, subject)
 			otMap = newOTMap
+			UpdateOtMap(otMap)
 		} else {
 			logger.Println("No updates.")
 		}

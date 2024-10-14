@@ -14,7 +14,6 @@ import (
 	_ "modernc.org/sqlite" // SQLite driver
 )
 
-// Post represents the shin_post table structure
 type Post struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
@@ -35,6 +34,13 @@ type PostItemContent struct {
 	CnTitle string `json:"cnTitle"`
 	Title   string `json:"title"`
 	Link    string `json:"link"`
+}
+
+type KeyValue struct {
+	ID        string `json:"id"`
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	CreatedAt string `json:"created_at"`
 }
 
 var db *sql.DB
@@ -68,6 +74,47 @@ func initDB() {
 	);`
 	if _, err := db.Exec(createPostItemTableSQL); err != nil {
 		panic("failed to create shin_post_item")
+	}
+
+	createKeyValueTableSQL := `CREATE TABLE IF NOT EXISTS shin_key_value (
+		id TEXT PRIMARY KEY,
+		key TEXT,
+		value TEXT,
+		created_at TEXT
+	);`
+	if _, err := db.Exec(createKeyValueTableSQL); err != nil {
+		panic("failed to create shin_key_value")
+	}
+}
+func GetOtMap() map[string]string {
+	var otMapJSON string
+	err := db.QueryRow("SELECT value FROM shin_key_value WHERE key = ?", OT_MAP_KEY).Scan(&otMapJSON)
+	if err != nil || otMapJSON == "" {
+		logger.Println("GetOtMap:", err)
+		return make(map[string]string)
+	}
+
+	var otMap map[string]string
+	err = json.Unmarshal([]byte(otMapJSON), &otMap)
+	if err != nil {
+		logger.Println("Unmarshl otMap err:", err)
+		return make(map[string]string)
+	}
+	return otMap
+}
+func UpdateOtMap(otMap map[string]string) {
+	now := strconv.FormatInt(time.Now().Unix(), 10)
+	valueJSON, err := json.Marshal(otMap)
+	if err != nil {
+		logger.Println("valueJSON err:", err)
+		return
+	}
+	logger.Println("UpdateOtMap:", string(valueJSON))
+	db.Exec(`DELETE FROM shin_key_value WHERE key = 'otMap';`)
+	_, err = db.Exec(`INSERT INTO shin_key_value (id, key, value, created_at) VALUES (?, ?, ?, ?);`,
+		now, "otMap", string(valueJSON), now)
+	if err != nil {
+		logger.Println("failed to execute statement:", err)
 	}
 }
 
@@ -131,6 +178,7 @@ func InsertPostItems(items []PostItem) error {
 
 	// 批量插入
 	for _, item := range items {
+		// TODO query before insert
 		_, err := stmt.Exec(item.ID, item.PostID, item.FeedTitle, item.Content, item.MemoID)
 		if err != nil {
 			tx.Rollback()
@@ -326,7 +374,7 @@ func getImportantFeeds(c *gin.Context) {
 		params[i] = fmt.Sprintf("'%s'", strings.TrimSpace(params[i]))
 	}
 
-	query := fmt.Sprintf("SELECT id, post_id, feed_title, content, memo_id FROM shin_post_item WHERE feed_title IN (%s) LIMIT 1000", strings.Join(params, ","))
+	query := fmt.Sprintf("SELECT id, post_id, feed_title, content, memo_id FROM shin_post_item WHERE feed_title IN (%s) LIMIT 1000 ORDER BY id DESC", strings.Join(params, ","))
 
 	logger.Println("getImportantFeeds:", query)
 
@@ -355,7 +403,6 @@ func getImportantFeeds(c *gin.Context) {
 	c.JSON(http.StatusOK, postItems)
 }
 
-// 处理登录请求
 func processLogin(c *gin.Context) {
 	var input struct {
 		Token string `form:"token"`
