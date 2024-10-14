@@ -374,13 +374,14 @@ func getImportantFeeds(c *gin.Context) {
 		params[i] = fmt.Sprintf("'%s'", strings.TrimSpace(params[i]))
 	}
 
-	query := fmt.Sprintf("SELECT id, post_id, feed_title, content, memo_id FROM shin_post_item WHERE feed_title IN (%s) LIMIT 1000 ORDER BY id DESC", strings.Join(params, ","))
+	query := fmt.Sprintf("SELECT id, post_id, feed_title, content, memo_id FROM shin_post_item WHERE feed_title IN (%s) ORDER BY id DESC LIMIT 1000", strings.Join(params, ","))
 
 	logger.Println("getImportantFeeds:", query)
 
 	rows, err := db.Query(query)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to execute query"})
+		logger.Println("Failed to execute query:", err)
 		return
 	}
 	defer rows.Close()
@@ -390,6 +391,7 @@ func getImportantFeeds(c *gin.Context) {
 		var item PostItem
 		if err := rows.Scan(&item.ID, &item.PostID, &item.FeedTitle, &item.Content, &item.MemoID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan result"})
+			logger.Println("Failed to scan result:", err)
 			return
 		}
 		postItems = append(postItems, item)
