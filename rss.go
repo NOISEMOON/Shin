@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	DB_PATH                     = "data/shin_v2.db"
+	DB_PATH                     = "data/shin_v3.db"
 	_                           = godotenv.Load("data/.env")
 	logger                      = log.New(os.Stdout, "", log.LstdFlags)
 	hn_regex                    = regexp.MustCompile(`https://news\.ycombinator\.com/item\?id=\d+`)
@@ -31,7 +31,6 @@ var (
 	freshrssContentURLPrefix    = os.Getenv("FRESHRSS_CONTENT_URL_PREFIX")
 	freshrssFilteredLabel       = os.Getenv("FRESHRSS_FILTERED_LABEL")
 	defaultOT                   = os.Getenv("DEFAULT_OT")
-	otMapJSON                   = os.Getenv("OT_MAP_JSON")
 	withContentFeeds            = os.Getenv("WITH_CONTENT_FEEDS")
 	IMPORTANT_FEEDS             = os.Getenv("IMPORTANT_FEEDS")
 	OT_MAP_KEY                  = "otMap"
@@ -55,8 +54,6 @@ func AsyncTask() {
 		// 默认从6小时前拉取
 		defaultOT = strconv.FormatInt(time.Now().Add(-6*time.Hour).Unix(), 10)
 	}
-	logger.Println("otMapJSON:", otMapJSON)
-	json.Unmarshal([]byte(otMapJSON), &otMap)
 	logger.Printf("Start otMap: %v newOTMap: %v defaultOT: %s", otMap, newOTMap, defaultOT)
 
 	authToken := rssAuth()
