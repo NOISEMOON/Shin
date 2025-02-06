@@ -51,25 +51,35 @@ func AsyncTask() {
 	otMap = GetOtMap()
 	newOTMap = make(map[string]string)
 	if defaultOT == "" {
-		// 默认从6小时前拉取
-		defaultOT = strconv.FormatInt(time.Now().Add(-6*time.Hour).Unix(), 10)
+		// 默认从2小时前拉取
+		defaultOT = strconv.FormatInt(time.Now().Add(-2*time.Hour).Unix(), 10)
 	}
 	logger.Printf("Start otMap: %v newOTMap: %v defaultOT: %s", otMap, newOTMap, defaultOT)
 
 	authToken := rssAuth()
 
 	for {
-		postID, postItems := fetchNews(authToken)
-		if len(postItems) > 0 {
-			location, _ := time.LoadLocation("Asia/Shanghai")
-			subject := fmt.Sprintf("RSS %s", time.Now().In(location).Format("2006-01-02 15:04:05"))
-			InsertPost(postID, subject)
-			otMap = newOTMap
-			UpdateOtMap(otMap)
-		} else {
-			logger.Println("No updates.")
-		}
-		logger.Println("End current loop.")
+		func() { // 使用匿名函数包裹 for 循环中的主要逻辑，方便捕获 panic
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Printf("Recovered from panic: %v", r)
+				}
+			}()
+
+			postID, postItems := fetchNews(authToken)
+			if len(postItems) > 0 {
+				location, _ := time.LoadLocation("Asia/Shanghai")
+				subject := fmt.Sprintf("RSS %s", time.Now().In(location).Format("2006-01-02 15:04:05"))
+				InsertPost(postID, subject)
+				otMap = newOTMap
+				UpdateOtMap(otMap)
+			} else {
+				logger.Println("No updates.")
+			}
+			logger.Println("End current loop.")
+		}()
+
+		// Sleep 不需要捕获异常，放在循环外
 		time.Sleep(time.Duration(pollIntervalSeconds) * time.Second)
 	}
 }
