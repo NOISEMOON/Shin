@@ -56,8 +56,6 @@ func AsyncTask() {
 	}
 	logger.Printf("Start otMap: %v newOTMap: %v defaultOT: %s", otMap, newOTMap, defaultOT)
 
-	authToken := rssAuth()
-
 	for {
 		func() { // 使用匿名函数包裹 for 循环中的主要逻辑，方便捕获 panic
 			defer func() {
@@ -66,6 +64,8 @@ func AsyncTask() {
 				}
 			}()
 
+			authToken := rssAuth()
+			logger.Println("rssAuth = ", authToken)
 			postID, postItems := fetchNews(authToken)
 			if len(postItems) > 0 {
 				location, _ := time.LoadLocation("Asia/Shanghai")
@@ -108,6 +108,7 @@ func rssAuth() string {
 }
 
 func fetchNews(authToken string) (string, []PostItem) {
+	logger.Println("fetchNews authToken", authToken)
 	postID := strconv.FormatInt(time.Now().UnixNano(), 10)
 	subs := fetchSub(authToken)
 
